@@ -1,0 +1,137 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, Bus, Check, CheckCircle2, ChevronDown, Clock3, History, LayoutDashboard, LogOut, MapPin, Menu, Navigation, Radio, RefreshCw, Send, ShieldCheck, Users, Wifi, X, AlertTriangle } from 'lucide-react';
+import CampusMap from './Map.jsx';
+import { transport, client } from './data/index.js';
+import { ACTIVE, LEVELS, age, isOnline } from './domain.js';
+const isDemo = transport.mode === 'demo';
+const position = () => new Promise((resolve, reject) => navigator.geolocation ? navigator.geolocation.getCurrentPosition(resolve, e => reject(new Error(e.code === 1 ? 'Allow location access in your browser to continue.' : 'Could not get a fresh location. Move outdoors and try again.')), { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }) : reject(new Error('This browser does not support location sharing.')));
+function Badge({ status }) { return <span className={`badge ${status || 'none'}`}><span />{({ available: 'Available', on_trip: 'On trip', off_duty: 'Off duty', dispatched: 'Dispatched', accepted: 'Accepted', arrived: 'Arrived', departed: 'Departed', cancelled: 'Cancelled', expired: 'Expired', offline: 'Offline' })[status] || 'No dispatch'}</span>; }
+function QueueBadge({ level }) { return <span className={`queue-badge level-${level}`}>{level > 0 && <span className="queue-bars">▂▅▇</span>}{LEVELS[level]}</span>; }
+
+export default function App() {
+  const [session, setSession] = useState(undefined), [role, setRole] = useState('operator'), [page, setPage] = useState('overview');
+  const [data, setData] = useState({ buses: [], stops: [], dispatches: [] }), [loading, setLoading] = useState(true), [error, setError] = useState(''), [toast, setToast] = useState(''), [selected, setSelected] = useState(null), [modal, setModal] = useState(null), [busy, setBusy] = useState(false), [connected, setConnected] = useState(navigator.onLine), [menu, setMenu] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
+  const refresh = useCallback(async () => {
+    try { const result = await transport.snapshot(); setData(result); if (!isDemo && result.role) setRole(result.role === 'admin' ? 'operator' : result.role); setError(''); setLastSync(Date.now()); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    if (isDemo) { setSession(null); return; }
+    client.auth.getSession().then(({ data, error }) => { if (error) setError(error.message); setSession(data.session); });
+    const { data: listener } = client.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+  useEffect(() => {
+    if (!isDemo && !session) return;
+    refresh(); const unsubscribe = transport.subscribe(refresh); const timer = setInterval(refresh, 5000);
+    return () => { unsubscribe(); clearInterval(timer); };
+  }, [session, refresh]);
+  useEffect(() => { const update = () => setConnected(navigator.onLine); window.addEventListener('online', update); window.addEventListener('offline', update); return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); }; }, []);
+  useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 5000); return () => clearTimeout(timer); } }, [toast]);
+  async function action(fn, message) {
+    setBusy(true);
+    try { await fn(); await refresh(); setToast(message); setModal(null); return true; }
+    catch (e) { setToast(e.message); return false; }
+    finally { setBusy(false); }
+  }
+  if (!isDemo && session === undefined) return <div className="loading">Connecting to OAU Transit…</div>;
+  if (!isDemo && !session) return <Login error={error} />;
+  const activeDispatches = data.dispatches.filter(d => ACTIVE.includes(d.status));
+  const available = data.buses.filter(b => b.status === 'available' && isOnline(b) && !activeDispatches.some(d => d.bus_id === b.id));
+  const selectedStop = data.stops.find(s => s.id === selected);
+  const nav = role === 'operator' ? [{ id: 'overview', icon: LayoutDashboard, label: 'Overview' }, { id: 'fleet', icon: Bus, label: 'Shuttle fleet' }, { id: 'history', icon: History, label: 'Dispatch history' }] : [{ id: 'overview', icon: role === 'driver' ? Navigation : MapPin, label: role === 'driver' ? 'My shift' : 'Campus stops' }];
+  return <div className="app-shell">
+    <aside className={`sidebar ${menu ? 'open' : ''}`}>
+      <a href="#" className="brand" onClick={() => setPage('overview')}><span className="brand-icon"><Bus size={23}/></span><span>OAU<span className="brand-light"> Transit</span><small>CAMPUS TRANSPORT</small></span></a>
+      <div className="workspace"><span className="workspace-avatar">O</span><div>Obafemi Awolowo University<small>Ile-Ife, Nigeria</small></div></div>
+      <p className="nav-label">WORKSPACE</p><nav>{nav.map(n => <button key={n.id} className={page === n.id ? 'active' : ''} onClick={() => { setPage(n.id); setMenu(false); }}><n.icon size={18}/>{n.label}{page === n.id && <span className="nav-dot"/>}</button>)}</nav>
+      <div className="sidebar-bottom"><div className="help-card"><Radio size={21}/><strong>People make the call.</strong><p>Live information helps you decide where a shuttle is needed.</p></div><div className="profile"><span className="profile-avatar">{role === 'operator' ? 'TO' : role === 'driver' ? 'DR' : 'ST'}</span><div>{role === 'operator' ? 'Transport office' : role === 'driver' ? 'Shuttle driver' : 'Campus student'}<small>{isDemo ? 'Demo workspace' : 'University account'}</small></div>{!isDemo && <button className="icon-button" aria-label="Sign out" onClick={() => client.auth.signOut()}><LogOut size={17}/></button>}</div></div>
+    </aside>
+    <div className="main-shell"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" onClick={() => setMenu(!menu)} aria-label="Toggle navigation"><Menu size={20}/></button><span>Workspace</span><span>/</span><strong>{nav.find(n => n.id === page)?.label || 'Overview'}</strong></div><div className="topbar-right">{isDemo && <label className="role-switch">Preview as <select aria-label="Preview role" value={role} onChange={e => { setRole(e.target.value); setPage('overview'); }}><option value="operator">Operator</option><option value="student">Student</option><option value="driver">Driver</option></select></label>}<span className={`connection ${connected && !error ? '' : 'disconnected'}`}><span/>{!connected ? 'Offline' : error ? 'Reconnecting' : isDemo ? 'Demo mode' : 'Connected'}</span></div></header>
+      <main>
+        {isDemo && <div className="demo-banner"><span><ShieldCheck size={15}/> Interactive demo · Sample locations and data. No real buses are being dispatched.</span><button onClick={() => { transport.reset(); setToast('Demo data reset.'); }}>Reset demo <RefreshCw size={13}/></button></div>}
+        {error && <div className="alert"><AlertTriangle size={18}/><span>{error} · Showing the last successful update.</span><button onClick={refresh}>Retry</button></div>}
+        {!connected && <div className="alert">You’re offline. The information below may be out of date.</div>}
+        {loading ? <div className="loading">Loading your workspace…</div> : role === 'operator' ? <>
+          <div className="page-heading"><div><div className="eyebrow">TRANSPORT OPERATIONS</div><h1>{page === 'overview' ? 'A clearer view of campus.' : page === 'fleet' ? 'Your shuttle fleet.' : 'Every dispatch, recorded.'}</h1><p>{page === 'overview' ? 'See where students are waiting. Get shuttles where they’re needed.' : page === 'fleet' ? 'Availability and the latest signal from every shuttle.' : 'Track each assignment from the first call to arrival.'}</p></div><button className="primary" disabled={!available.length || !connected || !!error} onClick={() => setModal({ type: 'dispatch', stopId: selected || data.stops[0]?.id })}><Send size={16}/>New dispatch</button></div>
+          {page === 'overview' && <>
+            <section className="stats"><Stat label="Shuttles online" value={data.buses.filter(b => isOnline(b)).length} suffix={`/ ${data.buses.length}`} icon={Bus} note={`${available.length} available for dispatch`} tone="green"/><Stat label="Stops needing attention" value={data.stops.filter(s => s.level >= 2).length} icon={Users} note={`${data.stops.filter(s => s.level === 3).length} reporting packed queues`} tone="orange"/><Stat label="Active dispatches" value={activeDispatches.length} icon={Navigation} note={`${activeDispatches.filter(d => d.status === 'dispatched').length} awaiting phone confirmation`} tone="blue"/><Stat label="Arrivals today" value={data.dispatches.filter(d => d.arrived_at && new Date(d.arrived_at).toDateString() === new Date().toDateString()).length} icon={CheckCircle2} note="Confirmed by shuttle location" tone="green"/></section>
+            <div className="operations-grid"><section className="panel map-panel"><div className="panel-heading"><div><h2>Campus overview</h2><p>Shuttles and queue levels, in one place</p></div><span className="small-label"><span className="live-dot"/>{isDemo ? 'SAMPLE MAP' : 'LIVE MAP'}</span></div><div className="map-wrap"><CampusMap stops={data.stops} buses={data.buses} selected={selected} onSelect={setSelected}/><div className="map-caption"><MapPin size={14}/>Obafemi Awolowo University</div></div><div className="map-legend"><span><i className="legend-square"/>Shuttle</span><span><i className="legend-dot red"/>Packed</span><span><i className="legend-dot amber"/>Many</span><span><i className="legend-dot green"/>Few</span><span className="legend-note">Select a stop to dispatch</span></div></section>
+            <section className="panel attention-panel"><div className="panel-heading"><div><h2>Needs attention <span className="count">{data.stops.filter(s => s.level >= 2).length}</span></h2><p>Highest queue levels first</p></div><ArrowUpRight size={19}/></div><div className="stop-list">{[...data.stops].sort((a,b) => b.level - a.level || (a.level_since || '').localeCompare(b.level_since || '')).map(s => <button key={s.id} className={`stop-row ${selected === s.id ? 'selected' : ''}`} onClick={() => setSelected(s.id)}><span className={`stop-icon level-${s.level}`}><MapPin size={18}/></span><span className="stop-copy"><strong>{s.name}</strong><small>{s.report_count || 0} reports · {s.latest_report ? age(s.latest_report) : 'No recent reports'}</small></span><QueueBadge level={s.level}/></button>)}</div><div className="attention-footer">{selectedStop ? <><div><strong>{selectedStop.name}</strong><small>{selectedStop.dispatch_status ? 'A shuttle is already assigned' : 'No shuttle currently assigned'}</small></div><button className="small-primary" disabled={!available.length || !connected || !!error} onClick={() => setModal({ type: 'dispatch', stopId: selected })}>Dispatch <ArrowRight size={15}/></button></> : <p><ShieldCheck size={15}/> Queue levels need 3 independent reports.</p>}</div></section></div>
+          </>}
+          {page === 'fleet' ? <section className="fleet-grid">{data.buses.map(b => <article className="panel fleet-card" key={b.id}><span className="fleet-icon"><Bus size={25}/></span><h2>{b.name}</h2><Badge status={isOnline(b) ? b.status : 'offline'}/><p>Last location: {age(b.last_seen)}</p><small>{activeDispatches.some(d => d.bus_id === b.id) ? 'Assigned to an active dispatch' : 'No active dispatch'}</small></article>)}</section> : <DispatchTable data={data} history={page === 'history'} onAccept={id => action(() => transport.transition(id, 'accept'), 'Phone confirmation recorded.')} onCancel={id => setModal({ type: 'cancel', id })} busy={busy || !connected || !!error} onHistory={() => setPage('history')}/>}
+        </> : role === 'student' ? <Student data={data} action={action} busy={busy || !connected || !!error}/> : <Driver data={data} action={action} refresh={refresh} userId={isDemo ? 'demo-driver' : session?.user.id}/>}
+        <footer className="page-footer"><span><span className="footer-mark">↗</span> Built for a campus on the move.</span><span>{lastSync ? `Last synced ${new Date(lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for connection'} · OAU Transit</span></footer>
+      </main>
+    </div>
+    {toast && <div className="toast" role="status">{toast}<button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={17}/></button></div>}
+    {modal && <Modal title={modal.type === 'dispatch' ? 'Send a shuttle' : 'Cancel dispatch'} onClose={() => !busy && setModal(null)}>{modal.type === 'dispatch' ? <DispatchForm data={data} available={available} initialStop={modal.stopId} busy={busy} onSubmit={(bus, stop, confirmed) => action(() => transport.dispatch(bus, stop, confirmed), 'Dispatch logged. Call the driver, then record their confirmation.')}/> : <CancelForm busy={busy} onSubmit={reason => action(() => transport.transition(modal.id, 'cancel', reason), 'Dispatch cancelled. You can now assign another bus.')}/>}</Modal>}
+  </div>;
+}
+function Stat({ label, value, suffix, icon: Icon, note, tone }) { return <article className="stat"><div className="stat-top"><span>{label}</span><Icon size={18}/></div><div className="stat-value">{value}<span>{suffix}</span></div><div className={`stat-note ${tone}`}><span/>{note}</div></article>; }
+function DispatchTable({ data, history, onAccept, onCancel, busy, onHistory }) {
+  const [filter, setFilter] = useState('all'), [busFilter, setBusFilter] = useState('all'), [stopFilter, setStopFilter] = useState('all'), [date, setDate] = useState('');
+  const rows = data.dispatches.filter(d => (filter === 'all' || d.status === filter) && (busFilter === 'all' || d.bus_id === busFilter) && (stopFilter === 'all' || d.stop_id === stopFilter) && (!date || new Date(d.created_at).toLocaleDateString('en-CA') === date));
+  return <section className="panel dispatch-panel"><div className="panel-heading"><div><h2>{history ? 'Dispatch history' : 'Recent dispatches'}</h2><p>Log it here. Make the call. Keep everyone informed.</p></div>{!history && <button className="text-button" onClick={onHistory}>View history <ArrowRight size={15}/></button>}</div>{history && <div className="filters"><select aria-label="Filter outcome" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All outcomes</option>{['dispatched', 'accepted', 'arrived', 'departed', 'cancelled', 'expired'].map(v => <option key={v}>{v}</option>)}</select><select aria-label="Filter bus" value={busFilter} onChange={e => setBusFilter(e.target.value)}><option value="all">All shuttles</option>{data.buses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select><select aria-label="Filter stop" value={stopFilter} onChange={e => setStopFilter(e.target.value)}><option value="all">All stops</option>{data.stops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select><input type="date" aria-label="Filter date" value={date} onChange={e => setDate(e.target.value)}/></div>}<div className="table-scroll"><table><thead><tr><th>SHUTTLE</th><th>DESTINATION</th><th>DISPATCHED</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>{(history ? rows : rows.slice(0, 5)).map(d => <tr key={d.id}><td><span className="table-bus"><Bus size={17}/>{data.buses.find(b => b.id === d.bus_id)?.name || 'Shuttle'}</span></td><td>{data.stops.find(s => s.id === d.stop_id)?.name}</td><td>{new Date(d.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td><Badge status={d.status}/></td><td><div className="row-actions">{d.status === 'dispatched' && <button disabled={busy} onClick={() => onAccept(d.id)}>Confirm phone call</button>}{['dispatched', 'accepted'].includes(d.status) && <button disabled={busy} className="cancel-link" onClick={() => onCancel(d.id)}>Cancel</button>}{!['dispatched', 'accepted'].includes(d.status) && <small>{d.cancel_reason || (d.status === 'expired' ? 'Call again or reassign' : 'Recorded')}</small>}</div></td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state"><Navigation size={26}/><strong>{history ? 'No matching dispatches' : 'Ready when you are.'}</strong><p>{history ? 'Try another filter.' : 'Your first dispatch will appear here. Select a stop to get started.'}</p></div>}</section>;
+}
+function Modal({ title, onClose, children }) {
+  const ref = useRef(null);
+  useEffect(() => { ref.current.showModal(); }, []);
+  return <dialog className="modal" ref={ref} onCancel={e => { e.preventDefault(); onClose(); }}><div className="modal-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label="Close dialog"><X size={20}/></button></div>{children}</dialog>;
+}
+function DispatchForm({ data, available, initialStop, busy, onSubmit }) {
+  const [bus, setBus] = useState(available[0]?.id || ''), [stop, setStop] = useState(initialStop || ''), [confirmed, setConfirmed] = useState(false);
+  const duplicate = data.dispatches.some(d => d.stop_id === stop && ACTIVE.includes(d.status));
+  return <form onSubmit={e => { e.preventDefault(); onSubmit(bus, stop, confirmed); }}><p className="form-intro">Create the dispatch first, then phone the driver. Confirm their acceptance from the dispatch list.</p><label>Destination<select required value={stop} onChange={e => { setStop(e.target.value); setConfirmed(false); }}>{data.stops.map(s => <option key={s.id} value={s.id}>{s.name} · {LEVELS[s.level]}</option>)}</select></label><label>Available shuttle<select required value={bus} onChange={e => setBus(e.target.value)}>{available.map(b => <option value={b.id} key={b.id}>{b.name}</option>)}</select></label>{duplicate && <label className="checkbox-warning"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)}/>A bus is already assigned to this stop. Send an additional shuttle.</label>}<div className="form-note"><Clock3 size={16}/>Unconfirmed dispatches expire after 3 minutes.</div><button className="primary full" disabled={busy || !bus || (duplicate && !confirmed)}><Send size={16}/>{busy ? 'Saving…' : 'Log dispatch'}</button></form>;
+}
+function CancelForm({ busy, onSubmit }) { const [reason, setReason] = useState(''); return <form onSubmit={e => { e.preventDefault(); onSubmit(reason); }}><label>Reason for cancellation<textarea required maxLength={500} value={reason} onChange={e => setReason(e.target.value)} placeholder="For example: driver unreachable"/></label><button className="primary full" disabled={busy || !reason.trim()}>Cancel dispatch</button></form>; }
+function Student({ data, action, busy }) {
+  const [stop, setStop] = useState(''), [level, setLevel] = useState(2);
+  return <><div className="page-heading"><div><div className="eyebrow">YOUR CAMPUS, CONNECTED</div><h1>A better way to wait.</h1><p>Check your stop. Share what you see. Help transport reach the right places.</p></div></div><div className="student-layout"><section className="student-stops">{data.stops.map(s => <button key={s.id} className={`panel student-stop ${stop === s.id ? 'selected' : ''}`} onClick={() => setStop(s.id)}><span className="stop-icon"><MapPin size={21}/></span><div><h2>{s.name}</h2><p>{s.dispatch_status === 'arrived' ? 'Bus arrived' : ['dispatched', 'accepted'].includes(s.dispatch_status) ? 'Bus dispatched' : 'No bus dispatched'}</p></div><QueueBadge level={s.level}/></button>)}</section><section className="panel report-panel"><span className="feature-icon"><Users size={25}/></span><h2>How’s the queue?</h2><p>Your report helps the transport office see where students are waiting.</p><form onSubmit={e => { e.preventDefault(); action(async () => { const location = isDemo ? null : await position(); await transport.report(stop, level, location); }, 'Report received. Three independent reports are needed to confirm a queue level.'); }}><label>Your stop<select value={stop} onChange={e => setStop(e.target.value)} required><option value="">Select a stop</option>{data.stops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label><div className="level-options">{[1, 2, 3].map(l => <button key={l} type="button" className={level === l ? 'selected' : ''} onClick={() => setLevel(l)}><Users size={20}/>{LEVELS[l]}</button>)}</div><div className="form-note"><MapPin size={16}/>{isDemo ? 'Demo reports simulate being at the selected stop.' : 'You must be within 50 m of the stop with location enabled.'}</div><button className="primary full" disabled={busy || !stop}>{busy ? 'Sending…' : 'Submit queue report'}<ArrowRight size={16}/></button></form><small className="privacy-note">Your identity stays private. A report does not guarantee a bus.</small></section></div></>;
+}
+function Driver({ data, action, refresh, userId }) {
+  const bus = data.buses.find(b => b.driver_id === userId);
+  const [sharing, setSharing] = useState(false), [signal, setSignal] = useState('Not sharing'), [wakeWarning, setWakeWarning] = useState(''), [starting, setStarting] = useState(false);
+  const wake = useRef(null), audio = useRef(null), running = useRef(false), activeRef = useRef(false);
+  const dispatch = data.dispatches.find(d => d.bus_id === bus?.id && ACTIVE.includes(d.status));
+  async function acquireWake() {
+    try { if ('wakeLock' in navigator) { wake.current = await navigator.wakeLock.request('screen'); wake.current.addEventListener('release', () => setWakeWarning('Screen wake lock released. Keep this page open and the screen awake.')); setWakeWarning(''); } else setWakeWarning('Keep your screen awake. Screen wake lock is unavailable on this browser.'); }
+    catch { setWakeWarning('Keep your screen awake. The browser could not hold a wake lock.'); }
+  }
+  useEffect(() => {
+    activeRef.current = sharing;
+    if (!sharing || !bus) return;
+    let disposed = false;
+    async function ping() {
+      if (disposed || running.current) return;
+      running.current = true;
+      try { const p = isDemo ? null : await position(); if (!disposed) { await transport.location(bus.id, p); setSignal('Live'); await refresh(); } }
+      catch (e) { if (!disposed) setSignal(navigator.onLine ? `Reconnecting · ${e.message}` : 'Offline'); }
+      finally { running.current = false; }
+    }
+    ping(); const timer = setInterval(ping, 10000);
+    const visible = () => { if (document.visibilityState === 'visible') { acquireWake(); ping(); } else setWakeWarning('Location sharing may pause in the background. Keep this page visible.'); };
+    document.addEventListener('visibilitychange', visible);
+    return () => { disposed = true; activeRef.current = false; clearInterval(timer); document.removeEventListener('visibilitychange', visible); wake.current?.release(); };
+  }, [sharing, bus?.id, refresh]);
+  useEffect(() => {
+    if (dispatch?.status !== 'dispatched' || !audio.current) return;
+    const ctx = audio.current; const osc = ctx.createOscillator(); const gain = ctx.createGain(); gain.gain.value = 0.1; osc.connect(gain); gain.connect(ctx.destination); osc.frequency.value = 700; osc.start(); osc.stop(ctx.currentTime + 0.35); navigator.vibrate?.([150, 80, 150]);
+  }, [dispatch?.id, dispatch?.status]);
+  if (!bus) return <div className="empty-state"><Bus size={30}/><h2>No shuttle assigned</h2><p>Ask your transport administrator to link your account to a shuttle.</p></div>;
+  async function start() {
+    setStarting(true);
+    try { const AudioContext = window.AudioContext || window.webkitAudioContext; if (AudioContext) { audio.current ||= new AudioContext(); await audio.current.resume(); } } catch { setWakeWarning('Sound is unavailable. Watch for dispatch alerts on screen.'); }
+    const ok = await action(async () => { const p = isDemo ? null : await position(); await transport.start(bus.id, p); }, 'Shift started. Keep this page visible and your screen awake.');
+    if (ok) { await acquireWake(); setSharing(true); setSignal('Live'); }
+    setStarting(false);
+  }
+  async function end() { setSharing(false); setSignal('Not sharing'); await action(() => transport.status(bus.id, 'off_duty'), 'Shift ended. Location sharing stopped.'); }
+  return <><div className="page-heading"><div><div className="eyebrow">DRIVER WORKSPACE</div><h1>You keep campus moving.</h1><p>Start your shift when you’re ready. Keep this page open while sharing location.</p></div></div><section className="panel driver-panel"><div className="driver-top"><span className="feature-icon"><Bus size={28}/></span><div><h2>{bus.name}</h2><p>Your assigned shuttle</p></div><Badge status={bus.status}/></div><div className="driver-signal"><Wifi size={22}/><div><strong>{signal}</strong><p>{sharing ? 'Location is sent about every 10 seconds.' : 'Location is only shared during an active shift.'}</p></div></div>{wakeWarning && sharing && <div className="alert">{wakeWarning}</div>}{sharing ? <><label>My status<select value={bus.status} onChange={e => action(() => transport.status(bus.id, e.target.value), 'Availability updated.')}><option value="available">Available</option><option value="on_trip">On trip</option></select></label><button className="secondary full" onClick={end}>End shift</button></> : <><p className="consent">By starting your shift, you agree to share your location with the transport office for shuttle coordination. Sharing stops when you end your shift or leave this page.</p><button className="primary full" disabled={starting} onClick={start}><Navigation size={17}/>{starting ? 'Getting location…' : 'Start shift'}</button></>}{dispatch && <div className="driver-dispatch" role="status"><span className="eyebrow">{dispatch.status === 'dispatched' ? 'NEW DISPATCH' : 'CURRENT ASSIGNMENT'}</span><h2>{data.stops.find(s => s.id === dispatch.stop_id)?.name}</h2><Badge status={dispatch.status}/><p>{dispatch.status === 'dispatched' ? 'The operator will call you. You do not need to tap to accept.' : 'Your operator has recorded this assignment.'}</p></div>}</section></>;
+}
+function Login({ error }) {
+  const [email, setEmail] = useState(''), [message, setMessage] = useState(error), [busy, setBusy] = useState(false);
+  return <div className="login-page"><div className="panel login-card"><span className="brand-icon"><Bus size={28}/></span><div className="eyebrow">OAU TRANSIT</div><h1>Campus, connected.</h1><p>Sign in with your university email. Drivers and operators use the email assigned by the administrator.</p><form onSubmit={async e => { e.preventDefault(); setBusy(true); try { const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } }); setMessage(error ? error.message : 'Check your email for your sign-in link.'); } catch (e) { setMessage(e.message); } finally { setBusy(false); } }}><label>Email address<input required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@university.edu"/></label><button className="primary full" disabled={busy}>{busy ? 'Sending…' : 'Send sign-in link'}<ArrowRight size={16}/></button></form>{message && <p role="status">{message}</p>}</div></div>;
+}
