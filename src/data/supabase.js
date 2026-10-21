@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-export const client = url && key ? createClient(url, key) : null;
+export const client = url && key ? createClient(url, key, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+}) : null;
 async function rpc(name, args) {
   const { data, error } = await client.rpc(name, args);
   if (error) throw new Error(error.message);

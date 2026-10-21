@@ -72,7 +72,12 @@ Reported totals are separate from registered vehicles and live availability. Sum
 
 ## Project files
 
-- `src/App.jsx`: student, driver and operator views.
+- `src/App.jsx`: workspace layout and view selection.
+- `src/Website.jsx`: landing page and app navigation.
+- `src/features/`: auth, student, driver, operator, fleet and dispatch components.
+- `src/components/`: shared badges, statistics, dialogs and campus photos.
+- `src/hooks/useTransport.js`: session, subscriptions, refresh and action state.
+- `src/services/location.js`: browser location requests.
 - `src/Landing.jsx`: landing page.
 - `src/domain.js`: queue, distance and availability logic.
 - `src/data/`: demo and Supabase adapters.
