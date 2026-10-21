@@ -25,11 +25,12 @@ Run these files in SQL Editor, in order:
 1. `supabase/migrations/001_transport.sql`
 2. Enable Cron, then run `supabase/migrations/002_maintenance.sql`.
 3. `supabase/migrations/003_fleet_registration.sql`
+4. `supabase/migrations/004_student_access.sql`
 
-Set the approved student email domain:
+Migration 004 restricts students to verified `@student.oauife.edu.ng` emails, including existing student accounts. Authorized staff keep access. The domain setting is:
 
 ```sql
-update public.settings set value = to_jsonb('CONFIRMED_DOMAIN'::text)
+update public.settings set value = to_jsonb('student.oauife.edu.ng'::text)
 where key = 'allowed_email_domain';
 ```
 
