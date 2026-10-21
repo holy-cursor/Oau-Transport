@@ -1,77 +1,86 @@
 # OAU Transit
 
-Local MVP implementation based on `Smart School Transport Manager - PRD and System Design.md`.
+Campus queue reporting, driver location sharing and operator dispatch.
 
-## Run
+## Run locally
 
-Node.js 22+ is recommended.
+Use Node.js 22 or newer.
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open the URL printed by Vite. Without Supabase environment variables, the app runs a **clearly labelled, browser-local demo**. Use **Preview as** to switch between operator, student and driver. Demo reports simulate location and do not contact anyone. Sample coordinates are illustrative, not verified pickup points. Sample buses become stale after two minutes; **Reset demo** restores fresh sample data. Start a demo driver shift to keep Shuttle 01 online. The demo does not simulate physical arrival/departure.
+Without Supabase credentials, the app runs in demo mode. Use **Preview as** to switch roles. Demo locations and vehicles are samples. **Reset demo** refreshes their signals.
 
 ```sh
 npm test
 npm run build
 ```
 
-## Connect a Supabase project
+## Supabase setup
 
-1. Create a Supabase project. Apply `supabase/migrations/001_transport.sql` in its SQL editor. Enable Cron and apply `002_maintenance.sql`. The latter schedules state refresh every ten seconds and daily retention cleanup. Apply each migration only once.
-2. Confirm the actual student email domain with OAU. Set it in SQL; the shipped value intentionally blocks student signup:
+Run these files in SQL Editor, in order:
+
+1. `supabase/migrations/001_transport.sql`
+2. Enable Cron, then run `supabase/migrations/002_maintenance.sql`.
+3. `supabase/migrations/003_fleet_registration.sql`
+
+Set the approved student email domain:
 
 ```sql
 update public.settings set value = to_jsonb('CONFIRMED_DOMAIN'::text)
 where key = 'allowed_email_domain';
 ```
 
-3. Before inviting any staff member through Authentication, pre-authorize their exact email:
+Authorize staff emails before their first sign-in:
 
 ```sql
 insert into private.staff_invites(email, role)
 values ('driver@example.com', 'driver'), ('operator@example.com', 'operator');
 ```
 
-The Auth insert trigger creates profiles using this allowlist or the university domain. Roles never come from browser-supplied metadata. Existing Auth accounts created before the migration need administrator-created profile rows. Configure Supabase Auth email rate limits and a production email sender before a pilot. This database trigger blocks unauthorized profile creation; an Auth Before User Created hook may also be added for friendlier signup errors.
+Accounts created before the migration need a profile added by an administrator. Configure SMTP for sign-in emails.
 
-4. Insert verified stops (`name, lat, lng, area`) and buses (`name, driver_id`) using the database dashboard. `driver_id` is the invited driver's Auth UUID. No real-world stops or driver identities are inserted by migrations.
-5. Copy `.env.example` to `.env`; supply the project URL and **publishable key** (or legacy anon key). Never use a secret/service-role key in Vite variables. Restart Vite.
-6. Configure Supabase Auth Site URL and allowed redirect URLs to include the local origin printed by Vite, and later the production HTTPS origin.
+Add verified stops in Supabase with `name`, `lat`, `lng` and `area`. Operators can register buses and tricycles from **Vehicle fleet**. Assign each vehicle's `driver_id` in Supabase using the driver's Auth UUID. New vehicles remain off duty until assigned and started by a driver.
 
-With both variables configured, demo switching disappears and the signed-in profile determines access. Students receive aggregate stop status only, not driver locations, identities, raw report counts or dispatch records. Operators and assigned drivers receive realtime database notifications; snapshots also refresh every five seconds for queue changes and time-based state. Mutations run through role-checked database functions; tables deny direct client writes.
+Copy `.env.example` to `.env` for local development. Set these variables locally and in Vercel:
 
-## Architecture and portability
+```text
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+```
 
-- `src/domain.js`: provider-independent queue/distance/availability helpers.
-- `src/data/index.js`: adapter selection. There is no automatic fallback from a failed live backend to demo data.
-- `src/data/demo.js`: local sample-data adapter.
-- `src/data/supabase.js`: the Supabase SDK and RPC calls are isolated here; authentication UI uses the exported client.
-- `src/App.jsx`, `src/Map.jsx`, `src/styles.css`: React views and Leaflet map.
-- `supabase/migrations`: relational schema, constraints, RLS, validated RPCs and scheduled maintenance.
+Use a publishable or anon key. Never put a service-role key in frontend variables. Set the production Site URL and redirect URLs in Supabase Auth. Redeploy Vercel after changing environment variables.
 
-The tables and business rules use PostgreSQL. Moving to another PostgreSQL host preserves most SQL; replace the `auth.uid()`/Auth trigger boundary, realtime publication, cron scheduling and adapter. Keeping Supabase but self-hosting requires less application change. The current code avoids storing optional GPS history.
+## Operating rules
 
-## Decisions made to reconcile the PRD
+- Three distinct students must support a queue level. Reports expire after ten minutes.
+- A repeat report replaces that student's previous report for the stop. Reporting has a 15-second cooldown.
+- Operators decide dispatches and confirm acceptance by phone. Unconfirmed dispatches expire after three minutes.
+- A vehicle can have only one active dispatch. Cancel with a reason before reassigning.
+- Arrival requires an accepted dispatch, location within 50 metres and a 30-second dwell. Departure is recorded beyond 100 metres.
+- Driver GPS updates every ten seconds. Vehicles become offline after two minutes without a signal.
+- Students see stop summaries, not driver locations or dispatch records.
 
-- A new queue report replaces the same student's previous report for that stop; a 15-second global cooldown prevents rapid spam. Each student contributes at most one current opinion per stop.
-- `departed` is the terminal successful dispatch state; no separate `closed` enum.
-- Reassignment means cancelling with a reason, then creating a new dispatch. Both records stay in history.
-- Arrival: accepted assigned bus only, within 50 m, at most 1 m/s when available, movement at most 10 m between pings, sustained for 30 seconds. A gap above 25 seconds resets the candidate. Departure uses 100 m. Physical GPS behavior still requires field tests.
-- Queue outcomes are evaluated only with three fresh post-arrival reporters. Lack of fresh evidence is not treated as an empty queue.
-- No automatic change to driver availability after acceptance or departure; active-dispatch uniqueness independently prevents double assignment.
+## Fleet information
 
-## Before a real pilot
+The transport contact reported 50 buses and 18 tricycles on 21 October 2026. Vehicles operate as needed without fixed route assignments. Supervisors call vehicles at other locations to check availability. Morning, after lectures and evening were all described as busy. No average daily trip count or daily active fleet count was supplied.
 
-- Apply and test the migrations in a disposable Supabase project, including permissions as each role. An SQL smoke harness is provided under `tests` when available; it is not a substitute for hosted Auth/realtime checks.
-- Verify the university domain, stop coordinates and staff roster.
-- Test actual driver phones: location permission, screen wake lock, foreground/background, signal loss, a drive-by, dwell and departure. GPS from a browser can be spoofed; distance checking is not proof of presence.
-- Obtain driver consent and transport office approval. Location sharing stops when the driver ends the shift; closing the page stops new pings and makes the bus offline after the timeout.
-- Check tile-provider usage requirements and backend quotas against actual load. The map uses OpenStreetMap tiles with attribution and does not prefetch them.
-- Set up database backups/exports and uptime monitoring. These external services are not provisioned by this code.
+Reported totals are separate from registered vehicles and live availability. Summary text is in `src/operations.js`; migration 003 stores the reported totals in database settings.
 
-## Current boundaries
+## Project files
 
-This is a first implementation, not a field-validated deployment. Driver/operator accounts, hosted database, email delivery and hosting require project configuration. History currently loads all dispatch records and is filtered in the browser, suitable for a small pilot; add paginated history before larger usage. Settings exist in the database; the initial UI uses the PRD's default 10-second GPS cadence and 120-second offline display threshold. If those values change, update UI constants too. No admin UI, fares, payments, guaranteed ETAs, background tracking or automatic dispatch.
+- `src/App.jsx`: student, driver and operator views.
+- `src/Landing.jsx`: landing page.
+- `src/domain.js`: queue, distance and availability logic.
+- `src/data/`: demo and Supabase adapters.
+- `supabase/migrations/`: schema, permissions, functions and scheduled maintenance.
+
+## Pilot checks and limitations
+
+Verify role permissions and one complete report-to-dispatch flow. Test GPS arrival and departure on actual driver phones. Drivers must keep the page active; background tracking is not supported.
+
+Confirm stops, driver consent and transport-office approval before a pilot. Set up backups and basic uptime monitoring. Check map-provider and backend usage limits.
+
+Driver assignment and stop management currently use Supabase. Dispatch history loads all records, suitable for a small pilot. GPS cadence and offline thresholds are also defined in the frontend; update those constants if database settings change.

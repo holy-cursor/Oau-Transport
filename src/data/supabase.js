@@ -9,6 +9,7 @@ async function rpc(name, args) {
 }
 export const live = {
   mode: 'live',
+  registerVehicle: (name, type) => rpc('register_vehicle', { p_name: name, p_type: type }),
   snapshot: () => rpc('transport_snapshot'),
   dispatch: (busId, stopId, confirmed) => rpc('create_dispatch', { p_bus: busId, p_stop: stopId, p_confirm_duplicate: confirmed }),
   transition: (id, action, reason) => rpc('change_dispatch', { p_id: id, p_action: action, p_reason: reason || null }),
@@ -17,7 +18,6 @@ export const live = {
   start: (busId, position) => rpc('start_shift', { p_bus: busId, p_lat: position.coords.latitude, p_lng: position.coords.longitude, p_accuracy: position.coords.accuracy }),
   location: (busId, position) => rpc('send_location', { p_bus: busId, p_lat: position.coords.latitude, p_lng: position.coords.longitude, p_accuracy: position.coords.accuracy, p_speed: position.coords.speed }),
   subscribe(callback) {
-    // RLS protects each channel. Snapshot polling also refreshes time-based expiry.
     const channel = client.channel('transport-updates').on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, callback).on('postgres_changes', { event: '*', schema: 'public', table: 'dispatches' }, callback).subscribe();
     return () => client.removeChannel(channel);
   },

@@ -18,11 +18,18 @@ function initial() {
   ], reports: stops.flatMap(s => s.level ? [0, 1, 2, 3].map(n => ({ id: id(), user_id: `student-${s.id}-${n}`, stop_id: s.id, level: s.level, created_at: ago(60 + n * 15) })) : []), dispatches: [] };
 }
 let state;
-try { state = JSON.parse(localStorage.getItem(KEY)); } catch { /* fresh session */ }
+try { state = JSON.parse(localStorage.getItem(KEY)); } catch {  }
 if (!state) state = initial();
 const save = () => { localStorage.setItem(KEY, JSON.stringify(state)); window.dispatchEvent(new Event('demo-change')); };
 export const demo = {
   mode: 'demo',
+  async registerVehicle(name, type) {
+    const clean = name.trim();
+    if (clean.length < 2 || clean.length > 80) throw new Error('Enter a vehicle name between 2 and 80 characters.');
+    if (!['bus', 'tricycle'].includes(type)) throw new Error('Choose a valid vehicle type.');
+    if (state.buses.some(b => b.name.trim().toLowerCase() === clean.toLowerCase())) throw new Error('This vehicle is already registered.');
+    state.buses.push({ id: id(), name: clean, vehicle_type: type, driver_id: null, status: 'off_duty', shift_active: false, last_seen: null }); save();
+  },
   async snapshot() {
     state.dispatches.forEach(d => { if (d.status === 'dispatched' && Date.now() - Date.parse(d.created_at) >= 180000) d.status = 'expired'; });
     return structuredClone({ ...state, stops: state.stops.map(s => {

@@ -1,5 +1,3 @@
--- OAU Transit: portable Postgres core, Supabase identity at the boundary.
--- Apply once to a fresh Supabase project. No real stops or accounts are seeded.
 begin;
 create schema if not exists private;
 revoke all on schema private from public;
@@ -13,7 +11,6 @@ insert into public.settings values
  ('arrival_radius_m','50'), ('arrival_dwell_seconds','30'), ('departure_radius_m','100'),
  ('accept_timeout_seconds','180'), ('retention_days','30');
 
--- Admin pre-authorizes staff email addresses before inviting them in Auth.
 create table private.staff_invites (email text primary key check(email = lower(email)), role text not null check(role in ('driver','operator','admin')));
 create table public.profiles (
  id uuid primary key references auth.users(id) on delete cascade,
@@ -35,7 +32,6 @@ create table public.stops (
  lng double precision not null check(lng between -180 and 180), active boolean not null default true,
  level smallint not null default 0 check(level between 0 and 3), level_since timestamptz not null default now()
 );
--- One latest report per identity and stop, updated in place. Server time only.
 create table public.queue_reports (
  user_id uuid not null references public.profiles(id) on delete cascade,
  stop_id uuid not null references public.stops(id), level smallint not null check(level between 1 and 3),
@@ -106,7 +102,6 @@ create function private.refresh_state() returns void language plpgsql security d
     and r.created_at>now()-make_interval(secs=>private.setting('report_window_seconds')))>=private.setting('reporter_threshold');
  end $$;
 
--- Direct client writes are denied. Validated RPCs are the only mutation boundary.
 alter table public.profiles enable row level security;
 alter table public.buses enable row level security;
 alter table public.stops enable row level security;
@@ -242,12 +237,10 @@ create function public.send_location(p_bus uuid,p_lat double precision,p_lng dou
   update public.buses set last_lat=p_lat,last_lng=p_lng,last_accuracy=p_accuracy,last_speed=p_speed,last_seen=now() where id=p_bus;
  end $$;
 
--- Explicitly close Postgres' default PUBLIC execution permission.
 revoke execute on all functions in schema private from public,anon,authenticated;
 grant execute on function private.role() to authenticated;
 revoke execute on function public.transport_snapshot(),public.submit_report(uuid,smallint,double precision,double precision,double precision),public.create_dispatch(uuid,uuid,boolean),public.change_dispatch(uuid,text,text),public.start_shift(uuid,double precision,double precision,double precision),public.set_bus_status(uuid,text),public.send_location(uuid,double precision,double precision,double precision,double precision) from public,anon;
 grant execute on function public.transport_snapshot(),public.submit_report(uuid,smallint,double precision,double precision,double precision),public.create_dispatch(uuid,uuid,boolean),public.change_dispatch(uuid,text,text),public.start_shift(uuid,double precision,double precision,double precision),public.set_bus_status(uuid,text),public.send_location(uuid,double precision,double precision,double precision,double precision) to authenticated;
 
--- Enable only tables whose row policies support the subscribed audience.
 alter publication supabase_realtime add table public.buses,public.dispatches;
 commit;

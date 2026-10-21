@@ -1,4 +1,3 @@
--- Supabase Cron: expire dispatches/queue levels even with no browser open.
 -- Requires pg_cron support; enable Cron in the project's Integrations first if needed.
 create extension if not exists pg_cron;
 select cron.schedule('transport-refresh','10 seconds',$$select private.refresh_state()$$);
