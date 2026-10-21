@@ -4,3 +4,5 @@ dist/
 .env.*
 !.env.example
 *.zip
+.asset-tools/
+.reference-assets/
