@@ -26,6 +26,7 @@ Run these files in SQL Editor, in order:
 2. Enable Cron, then run `supabase/migrations/002_maintenance.sql`.
 3. `supabase/migrations/003_fleet_registration.sql`
 4. `supabase/migrations/004_student_access.sql`
+5. `supabase/migrations/005_campus_stops.sql`
 
 Migration 004 restricts students to verified `@student.oauife.edu.ng` emails, including existing student accounts. Authorized staff keep access. The domain setting is:
 
@@ -55,6 +56,10 @@ VITE_SUPABASE_PUBLISHABLE_KEY=
 Use a publishable or anon key. Never put a service-role key in frontend variables. Set the production Site URL and redirect URLs in Supabase Auth. Redeploy Vercel after changing environment variables.
 
 ## Operating rules
+
+Migration 005 adds the six pickup coordinates supplied by the project owner. Short names are Campus Gate, Bus Stop 1, SUB, Health Sciences, Awo Hall and Angola/Mozambique. Existing matching short/full stop names are updated in place. Other stops are retained. Demo data uses the same points; this update resets older demo data.
+
+The dispatch form sorts available vehicles by direct-distance travel time, using owner-supplied speeds of 60-70 km/h for buses and 28-30 km/h for tricycles. These are planning assumptions, not verified road averages or recommended speeds. The displayed ideal time range excludes roads, traffic, boarding and confirmation delays. Only fresh, valid locations produce estimates. `src/travel.js` owns the calculation and speed ranges; migration 005 records the supplied assumptions in settings. Operator confirmation remains required. GPS arrival detection still requires actual location and dwell; these estimates never trigger arrivals.
 
 - Three distinct students must support a queue level. Reports expire after ten minutes.
 - A repeat report replaces that student's previous report for the stop. Reporting has a 15-second cooldown.

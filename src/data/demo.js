@@ -1,15 +1,10 @@
+import { campusStops } from '../stops.js';
 import { ACTIVE, dispatchGuard, queueLevel } from '../domain.js';
-const KEY = 'oau-transit-demo-v1';
+const KEY = 'oau-transit-demo-v2';
 const ago = seconds => new Date(Date.now() - seconds * 1000).toISOString();
 const id = () => crypto.randomUUID();
 function initial() {
-  const stops = [
-    { id: 's1', name: 'Campus Gate', area: 'Main entrance', lat: 7.492, lng: 4.521, level: 3 },
-    { id: 's2', name: 'SUB Bus Stop', area: 'Student Union Building', lat: 7.5186, lng: 4.528, level: 2 },
-    { id: 's3', name: 'Road 7 Gate', area: 'Residential axis', lat: 7.532, lng: 4.536, level: 3 },
-    { id: 's4', name: 'Asherifa', area: 'Campus approach', lat: 7.487, lng: 4.515, level: 1 },
-    { id: 's5', name: 'Fajuyi Hall', area: 'Halls of residence', lat: 7.524, lng: 4.521, level: 0 },
-  ];
+  const stops = campusStops.map((stop, index) => ({ ...stop, id: `s${index + 1}`, level: [3, 2, 3, 1, 0, 0][index] }));
   return { stops, buses: [
     { id: 'b1', name: 'Shuttle 01', driver_id: 'demo-driver', status: 'available', last_lat: 7.513, last_lng: 4.525, last_seen: ago(10) },
     { id: 'b2', name: 'Shuttle 02', driver_id: 'd2', status: 'on_trip', last_lat: 7.505, last_lng: 4.523, last_seen: ago(15) },
