@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { isOnline } from './domain.js';
+import { age, isOnline } from './domain.js';
 export default function CampusMap({ stops, buses, selected, onSelect }) {
   const container = useRef(null), map = useRef(null), layers = useRef(null);
   const [ready, setReady] = useState(!!window.L);
@@ -25,7 +25,7 @@ export default function CampusMap({ stops, buses, selected, onSelect }) {
     });
     buses.filter(b => b.last_lat != null).forEach(b => {
       const marker = L.marker([b.last_lat, b.last_lng], { icon: L.divIcon({ className: 'bus-marker', html: `<span class="map-bus ${!isOnline(b) ? 'offline' : ''}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="16" rx="3"/><path d="M5 11h14M8 19v2m8-2v2M8 15h1m6 0h1"/></svg></span>`, iconSize: [32,32], iconAnchor: [16,16] }) });
-      const label = document.createElement('span'); label.textContent = `${b.name} · ${isOnline(b) ? b.status.replace('_', ' ') : 'Offline'}`;
+      const label = document.createElement('span'); label.textContent = `${b.name} · ${isOnline(b) ? b.status.replace('_', ' ') : 'Offline'} | Last location: ${age(b.last_seen)}`;
       marker.bindTooltip(label).addTo(layers.current);
     });
   }, [stops, buses, selected, onSelect, ready]);

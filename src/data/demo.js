@@ -55,8 +55,8 @@ export const demo = {
     state.reports = state.reports.filter(r => !(r.stop_id === stopId && r.user_id === 'demo-student'));
     state.reports.push({ id: id(), stop_id: stopId, user_id: 'demo-student', level, created_at: ago(0) }); save();
   },
-  async status(busId, status) { const bus = state.buses.find(b => b.id === busId); bus.status = status; save(); },
-  async start(busId) { const bus = state.buses.find(b => b.id === busId); bus.status = 'available'; bus.last_seen = ago(0); save(); },
+  async status(busId, status) { const bus = state.buses.find(b => b.id === busId); bus.status = status; if (status === 'off_duty') bus.shift_active = false; save(); },
+  async start(busId) { const bus = state.buses.find(b => b.id === busId); bus.status = 'available'; bus.shift_active = true; bus.last_seen = ago(0); save(); },
   async location(busId) { const bus = state.buses.find(b => b.id === busId); bus.last_seen = ago(0); save(); },
   reset() { state = initial(); save(); },
 };

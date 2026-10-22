@@ -78,6 +78,7 @@ Reported totals are separate from registered vehicles and live availability. Sum
 - `src/components/`: shared badges, statistics, dialogs and campus photos.
 - `src/hooks/useTransport.js`: session, subscriptions, refresh and action state.
 - `src/services/location.js`: browser location requests.
+- `src/hooks/useDriverTracking.js`: visible-page tracking, wake lock and recovery after backgrounding or reconnecting.
 - `src/Landing.jsx`: landing page.
 - `src/domain.js`: queue, distance and availability logic.
 - `src/data/`: demo and Supabase adapters.
@@ -85,7 +86,7 @@ Reported totals are separate from registered vehicles and live availability. Sum
 
 ## Pilot checks and limitations
 
-Verify role permissions and one complete report-to-dispatch flow. Test GPS arrival and departure on actual driver phones. Drivers must keep the page active; background tracking is not supported.
+Verify role permissions and one complete report-to-dispatch flow. Test GPS arrival and departure on actual driver phones. Tracking pauses when the page is hidden and resumes when visible. The active shift is restored from Supabase after a reload. Returning to the page refreshes dispatches, requests a fresh position and reacquires screen wake lock where supported. Internet reconnection also retries tracking. End shift stops it. Operators see the last location's age and vehicles become offline after two minutes without an update. Continuous background tracking is not supported.
 
 Confirm stops, driver consent and transport-office approval before a pilot. Set up backups and basic uptime monitoring. Check map-provider and backend usage limits.
 
