@@ -15,6 +15,7 @@ async function rpc(name, args) {
 }
 export const live = {
   mode: 'live',
+  assignDriver: (busId, driverId) => rpc('assign_driver', { p_bus: busId, p_driver: driverId || null }),
   registerVehicle: (name, type) => rpc('register_vehicle', { p_name: name, p_type: type }),
   snapshot: () => rpc('transport_snapshot'),
   dispatch: (busId, stopId, confirmed) => rpc('create_dispatch', { p_bus: busId, p_stop: stopId, p_confirm_duplicate: confirmed }),

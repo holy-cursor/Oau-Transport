@@ -1,6 +1,13 @@
 import { campusStops } from '../stops.js';
 import { ACTIVE, dispatchGuard, queueLevel } from '../domain.js';
 const KEY = 'oau-transit-demo-v2';
+const demoDrivers = [
+  { id: 'demo-driver', email: 'driver1@example.com' },
+  { id: 'd2', email: 'driver2@example.com' },
+  { id: 'd3', email: 'driver3@example.com' },
+  { id: 'd4', email: 'driver4@example.com' },
+  { id: 'd5', email: 'driver5@example.com' },
+];
 const ago = seconds => new Date(Date.now() - seconds * 1000).toISOString();
 const id = () => crypto.randomUUID();
 function initial() {
@@ -18,6 +25,18 @@ if (!state) state = initial();
 const save = () => { localStorage.setItem(KEY, JSON.stringify(state)); window.dispatchEvent(new Event('demo-change')); };
 export const demo = {
   mode: 'demo',
+  async assignDriver(busId, driverId) {
+    const vehicle = state.buses.find(b => b.id === busId);
+    if (!vehicle) throw new Error('Vehicle not found.');
+    const chosen = driverId || null;
+    if ((vehicle.driver_id || null) === chosen) return;
+    if (vehicle.shift_active || vehicle.status !== 'off_duty') throw new Error('End the vehicle shift before changing its driver.');
+    if (state.dispatches.some(d => d.bus_id === busId && ACTIVE.includes(d.status))) throw new Error('Finish or cancel the active dispatch first.');
+    if (chosen && !demoDrivers.some(d => d.id === chosen)) throw new Error('Select a registered driver account.');
+    if (chosen && state.buses.some(b => b.id !== busId && b.driver_id === chosen)) throw new Error('This driver already has a vehicle. Remove their current assignment first.');
+    Object.assign(vehicle, { driver_id: chosen, last_lat: null, last_lng: null, last_accuracy: null, last_speed: null, last_seen: null });
+    save();
+  },
   async registerVehicle(name, type) {
     const clean = name.trim();
     if (clean.length < 2 || clean.length > 80) throw new Error('Enter a vehicle name between 2 and 80 characters.');
@@ -27,7 +46,7 @@ export const demo = {
   },
   async snapshot() {
     state.dispatches.forEach(d => { if (d.status === 'dispatched' && Date.now() - Date.parse(d.created_at) >= 180000) d.status = 'expired'; });
-    return structuredClone({ ...state, stops: state.stops.map(s => {
+    return structuredClone({ ...state, drivers: demoDrivers, stops: state.stops.map(s => {
       const reports = state.reports.filter(r => r.stop_id === s.id && Date.now() - Date.parse(r.created_at) < 600000);
       return { ...s, level: queueLevel(reports), report_count: reports.length, latest_report: reports.sort((a,b) => b.created_at.localeCompare(a.created_at))[0]?.created_at,
         dispatch_status: state.dispatches.find(d => d.stop_id === s.id && ACTIVE.includes(d.status))?.status || null };

@@ -27,6 +27,7 @@ Run these files in SQL Editor, in order:
 3. `supabase/migrations/003_fleet_registration.sql`
 4. `supabase/migrations/004_student_access.sql`
 5. `supabase/migrations/005_campus_stops.sql`
+6. `supabase/migrations/006_driver_assignment.sql`
 
 Migration 004 restricts students to verified `@student.oauife.edu.ng` emails, including existing student accounts. Authorized staff keep access. The domain setting is:
 
@@ -44,7 +45,7 @@ values ('driver@example.com', 'driver'), ('operator@example.com', 'operator');
 
 Accounts created before the migration need a profile added by an administrator. Configure SMTP for sign-in emails.
 
-Add verified stops in Supabase with `name`, `lat`, `lng` and `area`. Operators can register buses and tricycles from **Vehicle fleet**. Assign each vehicle's `driver_id` in Supabase using the driver's Auth UUID. New vehicles remain off duty until assigned and started by a driver.
+Add verified stops in Supabase with `name`, `lat`, `lng` and `area`. Operators can register buses and tricycles from **Vehicle fleet**. After migration 006, select a driver on the vehicle card and save the assignment. Drivers appear after authorization and their first sign-in. To transfer a driver, end the shift, complete or cancel dispatches, remove the old assignment, then assign the new vehicle. New assignments clear previous GPS coordinates and remain off duty until the driver starts a shift.
 
 Copy `.env.example` to `.env` for local development. Set these variables locally and in Vercel:
 
@@ -95,4 +96,4 @@ Verify role permissions and one complete report-to-dispatch flow. Test GPS arriv
 
 Confirm stops, driver consent and transport-office approval before a pilot. Set up backups and basic uptime monitoring. Check map-provider and backend usage limits.
 
-Driver assignment and stop management currently use Supabase. Dispatch history loads all records, suitable for a small pilot. GPS cadence and offline thresholds are also defined in the frontend; update those constants if database settings change.
+Driver email authorization and stop management currently use Supabase. Driver-to-vehicle assignment is available in Vehicle fleet. Dispatch history loads all records, suitable for a small pilot. GPS cadence and offline thresholds are also defined in the frontend; update those constants if database settings change.
