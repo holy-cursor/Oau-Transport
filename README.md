@@ -28,6 +28,7 @@ Run these files in SQL Editor, in order:
 4. `supabase/migrations/004_student_access.sql`
 5. `supabase/migrations/005_campus_stops.sql`
 6. `supabase/migrations/006_driver_assignment.sql`
+7. `supabase/migrations/007_public_map.sql`
 
 Migration 004 restricts students to verified `@student.oauife.edu.ng` emails, including existing student accounts. Authorized staff keep access. The domain setting is:
 
@@ -97,3 +98,10 @@ Verify role permissions and one complete report-to-dispatch flow. Test GPS arriv
 Confirm stops, driver consent and transport-office approval before a pilot. Set up backups and basic uptime monitoring. Check map-provider and backend usage limits.
 
 Driver email authorization and stop management currently use Supabase. Driver-to-vehicle assignment is available in Vehicle fleet. Dispatch history loads all records, suitable for a small pilot. GPS cadence and offline thresholds are also defined in the frontend; update those constants if database settings change.
+
+
+## Public homepage map
+
+Migration 007 provides `public_transport_map`, a read-only function available to anonymous and authenticated visitors. It returns active stops with aggregate queue levels and active-shift vehicles with locations newer than two minutes. Public vehicle labels hide registration names; driver identities, emails, raw reports and dispatch history are excluded. Direct table permissions are unchanged. Viewing locations is public; student reports and transport controls still require their authorized roles.
+
+The homepage refreshes every 15 seconds while visible and on return/reconnection. Stale locations are filtered from cached results too. `src/features/public/PublicMap.jsx` and `src/hooks/usePublicMap.js` own this view. The main hero button and navigation link to `#live-map`. A missing migration produces an unavailable message, never a silent fallback to sample data. Demo mode is labelled. This expands vehicle-location visibility beyond the original student-only stop summary design.

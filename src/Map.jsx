@@ -29,5 +29,5 @@ export default function CampusMap({ stops, buses, selected, onSelect }) {
       marker.bindTooltip(label).addTo(layers.current);
     });
   }, [stops, buses, selected, onSelect, ready]);
-  return <div className="map-container"><div className="campus-map" ref={container} aria-label="Map of campus shuttle positions and stops" />{!ready && <div className="map-unavailable">Map loading. If your connection is unavailable, use the stop list to dispatch.</div>}</div>;
+  return <div className="map-container"><div className="campus-map" ref={container} aria-label="Map of campus shuttle positions and stops" />{!ready && <div className="map-unavailable">Map loading. You can also use the stop list below.</div>}</div>;
 }

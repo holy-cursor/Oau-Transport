@@ -25,6 +25,14 @@ if (!state) state = initial();
 const save = () => { localStorage.setItem(KEY, JSON.stringify(state)); window.dispatchEvent(new Event('demo-change')); };
 export const demo = {
   mode: 'demo',
+  async publicMap() {
+    const snapshot = await demo.snapshot();
+    return {
+      stops: snapshot.stops.map(({ id, name, lat, lng, level }) => ({ id, name, lat, lng, level })),
+      buses: snapshot.buses.filter(b => b.status !== 'off_duty' && b.last_seen && Date.now() - Date.parse(b.last_seen) < 120000)
+        .map(({ id, vehicle_type, status, last_lat, last_lng, last_seen }, index) => ({ id, name: `Demo vehicle ${index + 1}`, vehicle_type, status, last_lat, last_lng, last_seen })),
+    };
+  },
   async assignDriver(busId, driverId) {
     const vehicle = state.buses.find(b => b.id === busId);
     if (!vehicle) throw new Error('Vehicle not found.');
