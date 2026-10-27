@@ -1,3 +1,4 @@
+import { validateEvidence } from '../services/evidence.js';
 import { campusStops } from '../stops.js';
 import { ACTIVE, dispatchGuard, queueLevel } from '../domain.js';
 const KEY = 'oau-transit-demo-v2';
@@ -22,9 +23,54 @@ function initial() {
 let state;
 try { state = JSON.parse(localStorage.getItem(KEY)); } catch {  }
 if (!state) state = initial();
+let previewRole = 'student';
+const actor = () => previewRole === 'driver' ? 'demo-driver' : previewRole === 'student' ? 'demo-student' : previewRole === 'super_admin' ? 'demo-admin' : 'demo-supervisor';
+state.accounts ||= [{ id: 'demo-admin', email: 'admin@example.com', role: 'super_admin', active: true }, { id: 'demo-supervisor', email: 'supervisor@example.com', role: 'supervisor', active: true }, { id: 'demo-student', email: 'student@student.oauife.edu.ng', role: 'student', active: true }, ...demoDrivers.map(d => ({ ...d, role: 'driver', active: true }))];
+state.complaints ||= []; state.photos ||= []; state.invitations ||= []; state.activity ||= [];
+const audit = (entity, action, details = {}) => { state.activity.unshift({ id: id(), actor_id: actor(), entity, action, details, created_at: ago(0) }); state.activity = state.activity.slice(0, 100); };
+async function demoPhoto(file, details) {
+  if (!file) return;
+  validateEvidence(file);
+  const encoded = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+  state.photos.push({ id: id(), user_id: actor(), created_at: ago(0), object_path: encoded, ...details });
+}
 const save = () => { localStorage.setItem(KEY, JSON.stringify(state)); window.dispatchEvent(new Event('demo-change')); };
 export const demo = {
   mode: 'demo',
+  setPreviewRole(role) { previewRole = role; },
+  evidenceUrl: async path => path,
+  async authorizeAccount(email, role) {
+    const normalized = email.trim().toLowerCase();
+    if (state.accounts.some(a => a.email === normalized)) throw new Error('This account already exists.');
+    state.invitations = state.invitations.filter(i => i.email !== normalized);
+    state.invitations.push({ email: normalized, role }); audit('invitations', 'authorized', { email: normalized, role }); save();
+  },
+  async revokeAuthorization(email) { state.invitations = state.invitations.filter(i => i.email !== email); audit('invitations', 'revoked', { email }); save(); },
+  async manageAccount(accountId, role, active) {
+    if (accountId === actor() && (role !== 'super_admin' || !active)) throw new Error('You cannot disable or demote your own account.');
+    const account = state.accounts.find(a => a.id === accountId);
+    if (!account) throw new Error('Account not found.');
+    const bus = state.buses.find(b => b.driver_id === accountId);
+    if (bus && (bus.shift_active || bus.status !== 'off_duty' || state.dispatches.some(d => d.bus_id === bus.id && ACTIVE.includes(d.status)))) throw new Error('End the shift and finish dispatches first.');
+    if (bus && (account.role !== role || !active)) Object.assign(bus, { driver_id: null, last_lat: null, last_lng: null, last_seen: null });
+    Object.assign(account, { role, active }); audit('profiles', 'updated', { email: account.email, role, active }); save();
+  },
+  async saveStop(stop) {
+    if (stop.id) Object.assign(state.stops.find(s => s.id === stop.id), stop, { lat: Number(stop.lat), lng: Number(stop.lng) });
+    else state.stops.push({ ...stop, id: id(), lat: Number(stop.lat), lng: Number(stop.lng), level: 0 });
+    audit('stops', 'saved', { name: stop.name }); save();
+  },
+  async complain(issue, file) {
+    const complaint = { ...issue, id: id(), reporter_id: actor(), status: 'open', created_at: ago(0), updated_at: ago(0) };
+    await demoPhoto(file, { complaint_id: complaint.id, stop_id: null });
+    state.complaints.unshift(complaint); audit('complaints', 'submitted', { category: issue.category }); save();
+  },
+  async reviewComplaint(issueId, status, response) {
+    const issue = state.complaints.find(i => i.id === issueId);
+    if (issue.category === 'supervisor' && previewRole !== 'super_admin') throw new Error('Only the super admin can review supervisor complaints.');
+    if (['resolved','dismissed'].includes(status) && response.trim().length < 3) throw new Error('Explain the outcome first.');
+    Object.assign(issue, { status, response, updated_at: ago(0) }); audit('complaints', status); save();
+  },
   async publicMap() {
     const snapshot = await demo.snapshot();
     return {
@@ -54,7 +100,16 @@ export const demo = {
   },
   async snapshot() {
     state.dispatches.forEach(d => { if (d.status === 'dispatched' && Date.now() - Date.parse(d.created_at) >= 180000) d.status = 'expired'; });
-    return structuredClone({ ...state, drivers: demoDrivers, stops: state.stops.map(s => {
+    const canSee = issue => previewRole === 'super_admin' || (previewRole === 'supervisor' && issue.category !== 'supervisor') || issue.reporter_id === actor();
+    return structuredClone({ ...state,
+      accounts: previewRole === 'super_admin' ? state.accounts : [],
+      invitations: previewRole === 'super_admin' ? state.invitations : [],
+      activity: previewRole === 'super_admin' ? state.activity : [],
+      all_stops: previewRole === 'super_admin' ? state.stops : [],
+      complaints: state.complaints.filter(canSee),
+      photos: state.photos.filter(p => p.complaint_id ? state.complaints.some(i => i.id === p.complaint_id && canSee(i)) : ['super_admin','supervisor'].includes(previewRole) || p.user_id === actor()),
+      drivers: state.accounts.filter(a => a.role === 'driver' && a.active),
+      stops: state.stops.filter(s => s.active !== false).map(s => {
       const reports = state.reports.filter(r => r.stop_id === s.id && Date.now() - Date.parse(r.created_at) < 600000);
       return { ...s, level: queueLevel(reports), report_count: reports.length, latest_report: reports.sort((a,b) => b.created_at.localeCompare(a.created_at))[0]?.created_at,
         dispatch_status: state.dispatches.find(d => d.stop_id === s.id && ACTIVE.includes(d.status))?.status || null };
@@ -73,12 +128,13 @@ export const demo = {
     else throw new Error('This dispatch cannot be changed. Refresh and try again.');
     save();
   },
-  async report(stopId, level) {
+  async report(stopId, level, location, file) {
+    await demoPhoto(file, { stop_id: stopId, complaint_id: null });
     state.reports = state.reports.filter(r => !(r.stop_id === stopId && r.user_id === 'demo-student'));
     state.reports.push({ id: id(), stop_id: stopId, user_id: 'demo-student', level, created_at: ago(0) }); save();
   },
   async status(busId, status) { const bus = state.buses.find(b => b.id === busId); bus.status = status; if (status === 'off_duty') bus.shift_active = false; save(); },
   async start(busId) { const bus = state.buses.find(b => b.id === busId); bus.status = 'available'; bus.shift_active = true; bus.last_seen = ago(0); save(); },
   async location(busId) { const bus = state.buses.find(b => b.id === busId); bus.last_seen = ago(0); save(); },
-  reset() { state = initial(); save(); },
+  reset() { state = { ...initial(), accounts: state.accounts, complaints: [], photos: [], invitations: [], activity: [] }; save(); },
 };
