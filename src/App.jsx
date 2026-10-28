@@ -16,7 +16,7 @@ import Login from './features/auth/Login.jsx';
 const isDemo = transport.mode === 'demo';
 
 
-export default function App() {
+export default function App({ authError = '' }) {
   const { session, role, setRole, data, loading, error, toast, setToast, busy, connected, lastSync, refresh, action: performAction } = useTransport();
   const [page, setPage] = useState('overview'), [selected, setSelected] = useState(null), [modal, setModal] = useState(null), [menu, setMenu] = useState(false);
   async function action(fn, message) {
@@ -25,7 +25,7 @@ export default function App() {
     return succeeded;
   }
   if (!isDemo && session === undefined) return <div className="loading">Connecting to OAU Transit…</div>;
-  if (!isDemo && !session) return <Login error={error} />;
+  if (!isDemo && !session) return <Login error={error || authError} />;
   const activeDispatches = data.dispatches.filter(d => ACTIVE.includes(d.status));
   const available = data.buses.filter(b => b.status === 'available' && isOnline(b) && !activeDispatches.some(d => d.bus_id === b.id));
   const selectedStop = data.stops.find(s => s.id === selected);
