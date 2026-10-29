@@ -26,6 +26,7 @@ if (!state) state = initial();
 let previewRole = 'student';
 const actor = () => previewRole === 'driver' ? 'demo-driver' : previewRole === 'student' ? 'demo-student' : previewRole === 'super_admin' ? 'demo-admin' : 'demo-supervisor';
 state.accounts ||= [{ id: 'demo-admin', email: 'admin@example.com', role: 'super_admin', active: true }, { id: 'demo-supervisor', email: 'supervisor@example.com', role: 'supervisor', active: true }, { id: 'demo-student', email: 'student@student.oauife.edu.ng', role: 'student', active: true }, ...demoDrivers.map(d => ({ ...d, role: 'driver', active: true }))];
+for (const account of state.accounts) if (account.role === 'supervisor' && !('supervisor_approved_at' in account)) account.supervisor_approved_at = ago(0);
 state.complaints ||= []; state.photos ||= []; state.invitations ||= []; state.activity ||= [];
 const audit = (entity, action, details = {}) => { state.activity.unshift({ id: id(), actor_id: actor(), entity, action, details, created_at: ago(0) }); state.activity = state.activity.slice(0, 100); };
 async function demoPhoto(file, details) {
@@ -46,6 +47,14 @@ export const demo = {
     state.invitations.push({ email: normalized, role }); audit('invitations', 'authorized', { email: normalized, role }); save();
   },
   async revokeAuthorization(email) { state.invitations = state.invitations.filter(i => i.email !== email); audit('invitations', 'revoked', { email }); save(); },
+  async approveSupervisor(accountId, approved) {
+    if (previewRole !== 'super_admin') throw new Error('Super admin access required.');
+    const account = state.accounts.find(a => a.id === accountId && a.role === 'supervisor');
+    if (!account) throw new Error('Select a supervisor account.');
+    if (approved && !account.active) throw new Error('Enable the account before approval.');
+    account.supervisor_approved_at = approved ? ago(0) : null;
+    audit('supervisor_access', approved ? 'approved' : 'revoked', { email: account.email }); save();
+  },
   async manageAccount(accountId, role, active) {
     if (accountId === actor() && (role !== 'super_admin' || !active)) throw new Error('You cannot disable or demote your own account.');
     const account = state.accounts.find(a => a.id === accountId);
@@ -53,6 +62,7 @@ export const demo = {
     const bus = state.buses.find(b => b.driver_id === accountId);
     if (bus && (bus.shift_active || bus.status !== 'off_duty' || state.dispatches.some(d => d.bus_id === bus.id && ACTIVE.includes(d.status)))) throw new Error('End the shift and finish dispatches first.');
     if (bus && (account.role !== role || !active)) Object.assign(bus, { driver_id: null, last_lat: null, last_lng: null, last_seen: null });
+    if (account.role !== role) account.supervisor_approved_at = null;
     Object.assign(account, { role, active }); audit('profiles', 'updated', { email: account.email, role, active }); save();
   },
   async saveStop(stop) {
@@ -67,12 +77,12 @@ export const demo = {
   },
   async reviewComplaint(issueId, status, response) {
     const issue = state.complaints.find(i => i.id === issueId);
-    if (issue.category === 'supervisor' && previewRole !== 'super_admin') throw new Error('Only the super admin can review supervisor complaints.');
+    if (previewRole !== 'super_admin') throw new Error('Super admin access required.');
     if (['resolved','dismissed'].includes(status) && response.trim().length < 3) throw new Error('Explain the outcome first.');
     Object.assign(issue, { status, response, updated_at: ago(0) }); audit('complaints', status); save();
   },
   async publicMap() {
-    const snapshot = await demo.snapshot();
+    const snapshot = { ...state, stops: state.stops.filter(s => s.active !== false).map(s => ({ ...s, level: queueLevel(state.reports.filter(r => r.stop_id === s.id)) })) };
     return {
       stops: snapshot.stops.map(({ id, name, lat, lng, level }) => ({ id, name, lat, lng, level })),
       buses: snapshot.buses.filter(b => b.status !== 'off_duty' && b.last_seen && Date.now() - Date.parse(b.last_seen) < 120000)
@@ -99,15 +109,17 @@ export const demo = {
     state.buses.push({ id: id(), name: clean, vehicle_type: type, driver_id: null, status: 'off_duty', shift_active: false, last_seen: null }); save();
   },
   async snapshot() {
+    const account = state.accounts.find(a => a.id === actor());
+    if (account && (!account.active || (previewRole === 'supervisor' && !account.supervisor_approved_at))) return { role: previewRole, access_status: account.active ? 'pending' : 'disabled', buses: [], stops: [], dispatches: [], complaints: [], photos: [] };
     state.dispatches.forEach(d => { if (d.status === 'dispatched' && Date.now() - Date.parse(d.created_at) >= 180000) d.status = 'expired'; });
-    const canSee = issue => previewRole === 'super_admin' || (previewRole === 'supervisor' && issue.category !== 'supervisor') || issue.reporter_id === actor();
-    return structuredClone({ ...state,
+    const canSee = issue => previewRole === 'super_admin' || issue.reporter_id === actor();
+    return structuredClone({ ...state, access_status: 'approved',
       accounts: previewRole === 'super_admin' ? state.accounts : [],
       invitations: previewRole === 'super_admin' ? state.invitations : [],
       activity: previewRole === 'super_admin' ? state.activity : [],
       all_stops: previewRole === 'super_admin' ? state.stops : [],
       complaints: state.complaints.filter(canSee),
-      photos: state.photos.filter(p => p.complaint_id ? state.complaints.some(i => i.id === p.complaint_id && canSee(i)) : ['super_admin','supervisor'].includes(previewRole) || p.user_id === actor()),
+      photos: state.photos.filter(p => p.complaint_id ? state.complaints.some(i => i.id === p.complaint_id && canSee(i)) : previewRole === 'super_admin' || p.user_id === actor()),
       drivers: state.accounts.filter(a => a.role === 'driver' && a.active),
       stops: state.stops.filter(s => s.active !== false).map(s => {
       const reports = state.reports.filter(r => r.stop_id === s.id && Date.now() - Date.parse(r.created_at) < 600000);

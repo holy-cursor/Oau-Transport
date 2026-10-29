@@ -12,5 +12,5 @@ export default function PhotoInput({ file, onChange, disabled }) {
     const chosen = e.target.files?.[0] || null;
     try { validateEvidence(chosen); setError(''); onChange(chosen); }
     catch (err) { setError(err.message); onChange(null); e.target.value = ''; }
-  }}/><small>One JPEG, PNG or WebP photo, up to 5 MB. Photos are private to your report and authorized reviewers.</small>{error && <p role="alert">{error}</p>}{preview && <><img src={preview} alt="Selected report evidence"/><button type="button" className="text-button" disabled={disabled} onClick={() => onChange(null)}>Remove photo</button></>}</div>;
+  }}/><small>JPEG, PNG or WebP · Up to 5 MB.</small>{error && <p className="auth-error" role="alert">{error}</p>}{preview && <><img src={preview} alt="Selected report evidence"/><button type="button" className="text-button" disabled={disabled} onClick={() => onChange(null)}>Remove photo</button></>}</div>;
 }

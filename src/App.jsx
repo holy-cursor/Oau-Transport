@@ -1,3 +1,4 @@
+import AccessPending from './features/auth/AccessPending.jsx';
 import SuperAdmin from './features/admin/SuperAdmin.jsx';
 import Reports from './features/reports/Reports.jsx';
 import './features/management.css';
@@ -26,6 +27,9 @@ export default function App({ authError = '' }) {
   }
   if (!isDemo && session === undefined) return <div className="loading">Connecting to OAU Transit…</div>;
   if (!isDemo && !session) return <Login error={error || authError} />;
+  if (data.access_status && data.access_status !== 'approved') return <AccessPending status={data.access_status} refresh={refresh} error={error} onSignOut={isDemo ? () => { setRole('super_admin'); transport.setPreviewRole('super_admin'); refresh(); } : undefined}/>;
+  if (!isDemo && loading) return <div className="loading">Checking account access.</div>;
+  if (!isDemo && !data.access_status) return <AccessPending status="restricted" refresh={refresh} error={error || 'We could not verify your account access. Please retry.'}/>;
   const activeDispatches = data.dispatches.filter(d => ACTIVE.includes(d.status));
   const available = data.buses.filter(b => b.status === 'available' && isOnline(b) && !activeDispatches.some(d => d.bus_id === b.id));
   const selectedStop = data.stops.find(s => s.id === selected);
@@ -42,16 +46,16 @@ export default function App({ authError = '' }) {
       <a href="#" className="brand" onClick={() => setPage('overview')}><span className="brand-icon"><Bus size={23}/></span><span>OAU<span className="brand-light"> Transit</span><small>CAMPUS TRANSPORT</small></span></a>
       <div className="workspace"><span className="workspace-avatar">O</span><div>Obafemi Awolowo University<small>Ile-Ife, Nigeria</small></div></div>
       <p className="nav-label">WORKSPACE</p><nav>{nav.map(n => <button key={n.id} className={page === n.id ? 'active' : ''} onClick={() => { setPage(n.id); setMenu(false); }}><n.icon size={18}/>{n.label}{page === n.id && <span className="nav-dot"/>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="help-card"><Radio size={21}/><strong>Dispatch coordination</strong><p>Live information helps you decide where a shuttle is needed.</p></div><div className="profile"><span className="profile-avatar">{manager ? 'TO' : role === 'driver' ? 'DR' : 'ST'}</span><div>{roleName}<small>{isDemo ? 'Demo workspace' : 'University account'}</small></div>{!isDemo && <button className="icon-button" aria-label="Sign out" onClick={() => client.auth.signOut()}><LogOut size={17}/></button>}</div></div>
+      <div className="sidebar-bottom"><div className="profile"><span className="profile-avatar">{manager ? 'TO' : role === 'driver' ? 'DR' : 'ST'}</span><div>{roleName}<small>{isDemo ? 'Demo workspace' : 'University account'}</small></div>{!isDemo && <button className="icon-button" aria-label="Sign out" onClick={() => client.auth.signOut()}><LogOut size={17}/></button>}</div></div>
     </aside>
     <div className="main-shell"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" onClick={() => setMenu(!menu)} aria-label="Toggle navigation"><Menu size={20}/></button><span>Workspace</span><span>/</span><strong>{nav.find(n => n.id === page)?.label || 'Overview'}</strong></div><div className="topbar-right">{isDemo && <label className="role-switch">Preview as <select aria-label="Preview role" value={role} onChange={e => { setRole(e.target.value); transport.setPreviewRole?.(e.target.value); setPage('overview'); refresh(); }}><option value="super_admin">Super admin</option><option value="supervisor">Supervisor</option><option value="student">Student</option><option value="driver">Driver</option></select></label>}<span className={`connection ${connected && !error ? '' : 'disconnected'}`}><span/>{!connected ? 'Offline' : error ? 'Reconnecting' : isDemo ? 'Demo mode' : 'Connected'}</span></div></header>
       <main>
-        {isDemo && <div className="demo-banner"><span><ShieldCheck size={15}/> Interactive demo · Sample locations and data. No real buses are being dispatched.</span><button onClick={() => { transport.reset(); setToast('Demo data reset.'); }}>Reset demo <RefreshCw size={13}/></button></div>}
+        {isDemo && <div className="demo-banner"><span><ShieldCheck size={15}/> Demo mode · Sample data.</span><button onClick={() => { transport.reset(); setToast('Demo data reset.'); }}>Reset demo <RefreshCw size={13}/></button></div>}
         {error && <div className="alert"><AlertTriangle size={18}/><span>{error} · Showing the last successful update.</span><button onClick={refresh}>Retry</button></div>}
         {!connected && <div className="alert">You’re offline. The information below may be out of date.</div>}
         {loading ? <div className="loading">Loading your workspace…</div> : page === 'reports' ? <Reports data={data} role={role} action={action} busy={busy || !connected || !!error}/> : role === 'super_admin' && page === 'overview' ? <SuperAdmin data={data} userId={userId} action={action} busy={busy || !connected || !!error}/> : manager ? <>
           <Operator page={page === 'operations' ? 'overview' : page} data={data} available={available} activeDispatches={activeDispatches} connected={connected} error={error} selected={selected} selectedStop={selectedStop} setSelected={setSelected} setModal={setModal} setPage={setPage} action={action} busy={busy} />
-        </> : role === 'student' ? <Student data={data} action={action} busy={busy || !connected || !!error}/> : <Driver data={data} action={action} refresh={refresh} userId={userId}/>}
+        </> : role === 'student' ? <Student data={data} action={action} busy={busy || !connected || !!error} onReportIssue={() => setPage('reports')}/> : <Driver data={data} action={action} refresh={refresh} userId={userId}/>}
         <footer className="page-footer"><span><span className="footer-mark">↗</span> OAU Transit</span><span>{lastSync ? `Last synced ${new Date(lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for connection'} · OAU Transit</span></footer>
       </main>
     </div>

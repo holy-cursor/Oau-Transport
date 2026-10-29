@@ -19,13 +19,16 @@ export const live = {
   publicMap: () => rpc('public_transport_map'),
   assignDriver: (busId, driverId) => rpc('assign_driver', { p_bus: busId, p_driver: driverId || null }),
   registerVehicle: (name, type) => rpc('register_vehicle', { p_name: name, p_type: type }),
+  approveSupervisor: (id, approved) => rpc('approve_supervisor', { p_id: id, p_approved: approved }),
   async snapshot() {
+    const access = await rpc('account_access');
+    if (access.access_status !== 'approved') return { ...access, buses: [], stops: [], dispatches: [], complaints: [], photos: [] };
     const data = await rpc('transport_snapshot');
     const [reports, management] = await Promise.all([
       rpc('reports_snapshot'),
       data.role === 'super_admin' ? rpc('admin_snapshot') : Promise.resolve({}),
     ]);
-    return { ...data, ...reports, ...management };
+    return { ...data, ...reports, ...management, ...access };
   },
   manageAccount: (id, role, active) => rpc('manage_account', { p_id: id, p_role: role, p_active: active }),
   authorizeAccount: (email, role) => rpc('authorize_account', { p_email: email, p_role: role }),
