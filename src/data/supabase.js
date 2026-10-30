@@ -47,12 +47,12 @@ export const live = {
   },
   dispatch: (busId, stopId, confirmed) => rpc('create_dispatch', { p_bus: busId, p_stop: stopId, p_confirm_duplicate: confirmed }),
   transition: (id, action, reason) => rpc('change_dispatch', { p_id: id, p_action: action, p_reason: reason || null }),
-  report: (stopId, level, position, file) => submitWithEvidence(client, file, path => rpc('submit_queue_report', { p_stop: stopId, p_level: level, p_lat: position.coords.latitude, p_lng: position.coords.longitude, p_accuracy: position.coords.accuracy, p_photo: path })),
+  report: (stopId, level, position, file, count) => submitWithEvidence(client, file, path => rpc('submit_counted_queue_report', { p_count: count ?? null, p_stop: stopId, p_level: level, p_lat: position.coords.latitude, p_lng: position.coords.longitude, p_accuracy: position.coords.accuracy, p_photo: path })),
   status: (busId, status) => rpc('set_bus_status', { p_bus: busId, p_status: status }),
   start: (busId, position) => rpc('start_shift', { p_bus: busId, p_lat: position.coords.latitude, p_lng: position.coords.longitude, p_accuracy: position.coords.accuracy }),
   location: (busId, position) => rpc('send_location', { p_bus: busId, p_lat: position.coords.latitude, p_lng: position.coords.longitude, p_accuracy: position.coords.accuracy, p_speed: position.coords.speed }),
   subscribe(callback) {
-    const channel = client.channel('transport-updates').on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, callback).on('postgres_changes', { event: '*', schema: 'public', table: 'dispatches' }, callback).subscribe();
+    const channel = client.channel('transport-updates').on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, callback).on('postgres_changes', { event: '*', schema: 'public', table: 'dispatches' }, callback).on('postgres_changes', { event: '*', schema: 'public', table: 'stops' }, callback).subscribe();
     return () => client.removeChannel(channel);
   },
 };

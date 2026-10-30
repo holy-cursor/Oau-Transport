@@ -37,7 +37,7 @@ export default function CampusMap({ stops, buses, selected, onSelect, focus, onL
     stops.filter(validMapPoint).forEach(stop => {
       const level = [0, 1, 2, 3].includes(stop.level) ? stop.level : 0;
       const marker = L.marker([stop.lat, stop.lng], { keyboard: true, title: stop.name, alt: stop.name, icon: L.divIcon({ className: 'transit-stop-icon', html: `<span class="transit-stop-pin queue-${level} ${selected === stop.id ? 'is-selected' : ''}"><span></span></span>`, iconSize: [28, 28], iconAnchor: [14, 14] }) });
-      const label = document.createElement('span'); label.textContent = stop.name;
+      const label = document.createElement('span'); label.textContent = stop.name + (Number.isFinite(stop.queue_count) ? ` (~${stop.queue_count})` : '');
       marker.bindTooltip(label, { permanent: close || selected === stop.id, direction: 'bottom', offset: [0, 12], className: 'transit-stop-label' }).on('click', () => onSelect?.(stop.id)).addTo(layers.current);
     });
     buses.filter(bus => validMapPoint({ lat: bus.last_lat, lng: bus.last_lng })).forEach(bus => {

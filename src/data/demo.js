@@ -1,7 +1,7 @@
 import { validateEvidence } from '../services/evidence.js';
 import { campusStops } from '../stops.js';
-import { ACTIVE, dispatchGuard, queueLevel } from '../domain.js';
-const KEY = 'oau-transit-demo-v2';
+import { distanceMeters, ACTIVE, dispatchGuard, queueLevel } from '../domain.js';
+const KEY = 'oau-transit-presentation-v3';
 const demoDrivers = [
   { id: 'demo-driver', email: 'driver1@example.com' },
   { id: 'd2', email: 'driver2@example.com' },
@@ -12,17 +12,20 @@ const demoDrivers = [
 const ago = seconds => new Date(Date.now() - seconds * 1000).toISOString();
 const id = () => crypto.randomUUID();
 function initial() {
-  const stops = campusStops.map((stop, index) => ({ ...stop, id: `s${index + 1}`, level: [3, 2, 3, 1, 0, 0][index] }));
-  return { stops, buses: [
-    { id: 'b1', name: 'Shuttle 01', driver_id: 'demo-driver', status: 'available', last_lat: 7.513, last_lng: 4.525, last_seen: ago(10) },
-    { id: 'b2', name: 'Shuttle 02', driver_id: 'd2', status: 'on_trip', last_lat: 7.505, last_lng: 4.523, last_seen: ago(15) },
-    { id: 'b3', name: 'Shuttle 03', driver_id: 'd3', status: 'available', last_lat: 7.524, last_lng: 4.531, last_seen: ago(20) },
-    { id: 'b4', name: 'Shuttle 04', driver_id: 'd4', status: 'off_duty', last_lat: 7.52, last_lng: 4.526, last_seen: ago(500) },
-  ], reports: stops.flatMap(s => s.level ? [0, 1, 2, 3].map(n => ({ id: id(), user_id: `student-${s.id}-${n}`, stop_id: s.id, level: s.level, created_at: ago(60 + n * 15) })) : []), dispatches: [] };
+  const stops = campusStops.map((stop, index) => ({ ...stop, id: `s${index + 1}`, level: [3, 2, 3, 1, 2, 1][index], queue_count: [62, 28, 47, 12, 32, 9][index], queue_since: ago(180 + index * 45) }));
+  return { simulation_started: Date.now(), simulation_tick: Date.now(), stops, buses: [
+    { id: 'b1', name: 'Shuttle 01', vehicle_type: 'bus', driver_id: 'demo-driver', status: 'available', shift_active: true, last_lat: 7.5170, last_lng: 4.5231, last_seen: ago(0) },
+    { id: 'b2', name: 'Shuttle 02', vehicle_type: 'bus', driver_id: 'd2', status: 'on_trip', shift_active: true, last_lat: 7.5158, last_lng: 4.5231, last_seen: ago(0) },
+    { id: 'b3', name: 'Tricycle 01', vehicle_type: 'tricycle', driver_id: 'd3', status: 'available', shift_active: true, last_lat: 7.5211, last_lng: 4.5164, last_seen: ago(0) },
+    { id: 'b4', name: 'Shuttle 04', vehicle_type: 'bus', driver_id: 'd4', status: 'off_duty', shift_active: false, last_lat: 7.5183, last_lng: 4.5207, last_seen: ago(500) },
+    { id: 'b5', name: 'Shuttle 05', vehicle_type: 'bus', driver_id: 'd5', status: 'available', shift_active: true, last_lat: 7.5193, last_lng: 4.5192, last_seen: ago(0) },
+  ], reports: stops.flatMap(s => [0, 1, 2, 3].map(n => ({ id: id(), user_id: `student-${s.id}-${n}`, stop_id: s.id, level: s.level, queue_count: s.queue_count + n - 2, created_at: ago(60 + n * 15) }))), dispatches: [
+    { id: id(), bus_id: 'b2', stop_id: 's1', status: 'accepted', created_at: ago(25), accepted_at: ago(20) }
+  ] };
 }
 let state;
 try { state = JSON.parse(localStorage.getItem(KEY)); } catch {  }
-if (!state) state = initial();
+if (!state || Date.now() - state.simulation_started > 43200000) state = initial();
 let previewRole = 'student';
 const actor = () => previewRole === 'driver' ? 'demo-driver' : previewRole === 'student' ? 'demo-student' : previewRole === 'super_admin' ? 'demo-admin' : 'demo-supervisor';
 state.accounts ||= [{ id: 'demo-admin', email: 'admin@example.com', role: 'super_admin', active: true }, { id: 'demo-supervisor', email: 'supervisor@example.com', role: 'supervisor', active: true }, { id: 'demo-student', email: 'student@student.oauife.edu.ng', role: 'student', active: true }, ...demoDrivers.map(d => ({ ...d, role: 'driver', active: true }))];
@@ -36,6 +39,39 @@ async function demoPhoto(file, details) {
   state.photos.push({ id: id(), user_id: actor(), created_at: ago(0), object_path: encoded, ...details });
 }
 const save = () => { localStorage.setItem(KEY, JSON.stringify(state)); window.dispatchEvent(new Event('demo-change')); };
+function simulate() {
+  try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved) state = saved; } catch {}
+  const now = Date.now(), elapsed = Math.min(5, (now - state.simulation_tick) / 1000);
+  if (elapsed < .9) return;
+  state.simulation_tick = now;
+  for (const bus of state.buses) {
+    if (!bus.shift_active || bus.status === 'off_duty' || bus.status === 'resting') continue;
+    bus.last_seen = new Date(now).toISOString();
+    const dispatch = state.dispatches.find(d => d.bus_id === bus.id && ACTIVE.includes(d.status));
+    if (dispatch?.status === 'dispatched' && now - Date.parse(dispatch.created_at) > 6000) {
+      dispatch.status = 'accepted'; dispatch.accepted_at = ago(0); bus.status = 'on_trip';
+    }
+    if (dispatch?.status === 'accepted') {
+      const stop = state.stops.find(s => s.id === dispatch.stop_id);
+      const distance = distanceMeters({ lat: bus.last_lat, lng: bus.last_lng }, stop);
+      const step = (bus.vehicle_type === 'tricycle' ? 29 : 65) / 3.6 * elapsed;
+      const ratio = distance > 0 ? Math.min(1, step / distance) : 1;
+      bus.last_lat += (stop.lat - bus.last_lat) * ratio; bus.last_lng += (stop.lng - bus.last_lng) * ratio;
+      if (distance < 25 || ratio === 1) {
+        dispatch.status = 'arrived'; dispatch.arrived_at = ago(0); bus.status = 'on_trip';
+        stop.queue_count = Math.max(0, stop.queue_count - (bus.vehicle_type === 'tricycle' ? 3 : 18));
+        state.reports.filter(r => r.stop_id === stop.id).forEach(r => { r.queue_count = stop.queue_count; r.level = stop.queue_count > 40 ? 3 : stop.queue_count > 15 ? 2 : 1; });
+      }
+    } else if (dispatch?.status === 'arrived' && now - Date.parse(dispatch.arrived_at) > 20000) {
+      dispatch.status = 'departed'; dispatch.departed_at = ago(0); dispatch.ended_at = ago(0); bus.status = 'available';
+    } else if (!dispatch) {
+      const target = state.stops[bus.id === 'b1' ? 1 : bus.id === 'b3' ? 4 : 2];
+      bus.last_lat += (target.lat - bus.last_lat) * .015; bus.last_lng += (target.lng - bus.last_lng) * .015;
+    }
+  }
+  state.reports.filter(r => r.user_id.startsWith('student-')).forEach(r => { r.created_at = ago(25); });
+  localStorage.setItem(KEY, JSON.stringify(state));
+}
 export const demo = {
   mode: 'demo',
   setPreviewRole(role) { previewRole = role; },
@@ -82,6 +118,7 @@ export const demo = {
     Object.assign(issue, { status, response, updated_at: ago(0) }); audit('complaints', status); save();
   },
   async publicMap() {
+    simulate();
     const snapshot = { ...state, stops: state.stops.filter(s => s.active !== false).map(s => ({ ...s, level: queueLevel(state.reports.filter(r => r.stop_id === s.id)) })) };
     return {
       stops: snapshot.stops.map(({ id, name, lat, lng, level }) => ({ id, name, lat, lng, level })),
@@ -109,6 +146,7 @@ export const demo = {
     state.buses.push({ id: id(), name: clean, vehicle_type: type, driver_id: null, status: 'off_duty', shift_active: false, last_seen: null }); save();
   },
   async snapshot() {
+    simulate();
     const account = state.accounts.find(a => a.id === actor());
     if (account && (!account.active || (previewRole === 'supervisor' && !account.supervisor_approved_at))) return { role: previewRole, access_status: account.active ? 'pending' : 'disabled', buses: [], stops: [], dispatches: [], complaints: [], photos: [] };
     state.dispatches.forEach(d => { if (d.status === 'dispatched' && Date.now() - Date.parse(d.created_at) >= 180000) d.status = 'expired'; });
@@ -123,7 +161,8 @@ export const demo = {
       drivers: state.accounts.filter(a => a.role === 'driver' && a.active),
       stops: state.stops.filter(s => s.active !== false).map(s => {
       const reports = state.reports.filter(r => r.stop_id === s.id && Date.now() - Date.parse(r.created_at) < 600000);
-      return { ...s, level: queueLevel(reports), report_count: reports.length, latest_report: reports.sort((a,b) => b.created_at.localeCompare(a.created_at))[0]?.created_at,
+      const counts = reports.map(r => r.queue_count).filter(Number.isFinite).sort((a,b) => a-b);
+      return { ...s, queue_count: counts.length ? Math.round(counts[Math.floor(counts.length / 2)]) : null, level: queueLevel(reports), report_count: reports.length, latest_report: reports.sort((a,b) => b.created_at.localeCompare(a.created_at))[0]?.created_at,
         dispatch_status: state.dispatches.find(d => d.stop_id === s.id && ACTIVE.includes(d.status))?.status || null };
     }) });
   },
@@ -135,15 +174,15 @@ export const demo = {
   },
   async transition(dispatchId, action, reason) {
     const d = state.dispatches.find(d => d.id === dispatchId);
-    if (action === 'accept' && d.status === 'dispatched' && Date.now() - Date.parse(d.created_at) < 180000) { d.status = 'accepted'; d.accepted_at = ago(0); }
-    else if (action === 'cancel' && ['dispatched', 'accepted'].includes(d.status) && reason?.trim()) { d.status = 'cancelled'; d.cancel_reason = reason; }
+    if (action === 'accept' && d.status === 'dispatched' && Date.now() - Date.parse(d.created_at) < 180000) { d.status = 'accepted'; d.accepted_at = ago(0); state.buses.find(b => b.id === d.bus_id).status = 'on_trip'; }
+    else if (action === 'cancel' && ['dispatched', 'accepted'].includes(d.status) && reason?.trim()) { d.status = 'cancelled'; d.cancel_reason = reason; state.buses.find(b => b.id === d.bus_id).status = 'available'; }
     else throw new Error('This dispatch cannot be changed. Refresh and try again.');
     save();
   },
-  async report(stopId, level, location, file) {
+  async report(stopId, level, location, file, count) {
     await demoPhoto(file, { stop_id: stopId, complaint_id: null });
     state.reports = state.reports.filter(r => !(r.stop_id === stopId && r.user_id === 'demo-student'));
-    state.reports.push({ id: id(), stop_id: stopId, user_id: 'demo-student', level, created_at: ago(0) }); save();
+    state.reports.push({ id: id(), stop_id: stopId, user_id: 'demo-student', level, queue_count: count ?? null, created_at: ago(0) }); save();
   },
   async status(busId, status) { const bus = state.buses.find(b => b.id === busId); bus.status = status; if (status === 'off_duty') bus.shift_active = false; save(); },
   async start(busId) { const bus = state.buses.find(b => b.id === busId); bus.status = 'available'; bus.shift_active = true; bus.last_seen = ago(0); save(); },

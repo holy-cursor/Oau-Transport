@@ -137,3 +137,7 @@ All complaints and report evidence now go directly to the super admin. Other use
 The map starts at street level near SUB or a selected stop. Student maps request location permission; public maps use a previously granted permission or the My location button. Zoom controls, touch zoom and panning remain available. Vehicle refreshes do not reset a manually chosen map view. The student workspace combines a searchable stop list, shared map selection and a queue-report panel; the backend still validates a fresh position at report submission.
 
 Successful email requests open a checkmark modal. Sign-in failures and account restrictions display in red. Driver/admin registration failures share the administrator-contact message; delivery and network failures retain their specific errors. Supervisor approval and student email restrictions are unchanged.
+
+## Password login and presentation demos
+
+See [PASSWORD_AND_DEMO_SETUP.md](PASSWORD_AND_DEMO_SETUP.md) for migration 011, disabling email confirmation, the one-time initial-password migration, and the connected admin/student demo pages.

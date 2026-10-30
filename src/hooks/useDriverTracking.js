@@ -13,6 +13,7 @@ export default function useDriverTracking(bus, refresh) {
       setWakeWarning('');
       return;
     }
+    if (transport.mode === 'demo') { setSignal('Simulated GPS active'); return; }
     let disposed = false, running = false, wake = null, acquiringWake = false;
     const visible = () => document.visibilityState === 'visible';
 
